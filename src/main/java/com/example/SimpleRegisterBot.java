@@ -15,12 +15,12 @@ public class SimpleRegisterBot extends TelegramLongPollingBot {
 
   @Override
   public String getBotUsername() {
-    return "";
+    return "RUDN_cleaning_schedule";
   }
 
   @Override
   public String getBotToken() {
-    return "";
+    return ""; // ваш токен
   }
 
   @Override
@@ -31,7 +31,6 @@ public class SimpleRegisterBot extends TelegramLongPollingBot {
       String userName = update.getMessage().getFrom().getUserName();
       String messageText = update.getMessage().getText();
 
-      // Обработка команд
       if ("/start".equals(messageText)) {
         SendMessage message = new SendMessage();
         message.setChatId(chatId);
@@ -45,7 +44,12 @@ public class SimpleRegisterBot extends TelegramLongPollingBot {
         return;
       }
 
-      // ----- НОВЫЙ БЛОК: создание комнаты -----
+      // Справка по командам
+      if ("/help".equals(messageText)) {
+        sendText(chatId, "🤖 *Бот для уборки*\n/start — меню\n/createroom *код* - создать новую комнату\n/entertheroom *код* - присоединиться к комнате");
+        return;
+      }
+
       if (messageText.startsWith("/createroom")) {
         String[] parts = messageText.split(" ", 2);
         if (parts.length < 2 || parts[1].trim().isEmpty()) {
@@ -54,22 +58,19 @@ public class SimpleRegisterBot extends TelegramLongPollingBot {
         }
         String roomCode = parts[1].trim();
 
-        // Убедимся, что пользователь зарегистрирован
         if (!dbManager.isUserRegistered(userId)) {
           dbManager.registerUser(userId, userName);
         }
 
         boolean created = dbManager.createRoom(roomCode, userId);
         if (created) {
-          sendText(
-              chatId, "✅ Комната '" + roomCode + "' успешно создана! Вы стали её участником.");
+          sendText(chatId, "✅ Комната '" + roomCode + "' успешно создана! Вы стали её участником.");
         } else {
           sendText(chatId, "❌ Комната с таким кодом уже существует. Придумайте другой код.");
         }
         return;
       }
 
-      // ----- НОВЫЙ БЛОК: вход в комнату -----
       if (messageText.startsWith("/entertheroom")) {
         String[] parts = messageText.split(" ", 2);
         if (parts.length < 2 || parts[1].trim().isEmpty()) {
@@ -78,7 +79,6 @@ public class SimpleRegisterBot extends TelegramLongPollingBot {
         }
         String roomCode = parts[1].trim();
 
-        // Убедимся, что пользователь зарегистрирован
         if (!dbManager.isUserRegistered(userId)) {
           dbManager.registerUser(userId, userName);
         }
@@ -97,7 +97,7 @@ public class SimpleRegisterBot extends TelegramLongPollingBot {
         return;
       }
 
-      // Старая логика для обычных сообщений (регистрация/приветствие)
+      // Обычное сообщение — регистрация/приветствие
       if (!dbManager.isUserRegistered(userId)) {
         dbManager.registerUser(userId, userName);
         sendText(chatId, "Вы успешно зарегистрированы, @" + userName + "!");
@@ -106,33 +106,74 @@ public class SimpleRegisterBot extends TelegramLongPollingBot {
       }
 
     } else if (update.hasCallbackQuery()) {
-      // Обработка inline-кнопок (оставляем без изменений)
       String callbackData = update.getCallbackQuery().getData();
       long chatId = update.getCallbackQuery().getMessage().getChatId();
       long userId = update.getCallbackQuery().getFrom().getId();
       String userName = update.getCallbackQuery().getFrom().getUserName();
 
-      switch (callbackData) {
-        case "profile":
-          if (dbManager.isUserRegistered(userId)) {
-            sendText(chatId, "👤 Твой профиль:\nID: " + userId + "\nUsername: @" + userName);
-          } else {
-            sendText(chatId, "Ты ещё не зарегистрирован.");
-          }
-          break;
-        case "help":
-          sendText(chatId, "❓ Это демо-бот. /start — меню");
-          break;
+      // Обработка нажатий на кнопки комнат (начинаются с "room_")
+      if (callbackData.startsWith("room_")) {
+        String roomCode = callbackData.substring(5);
+        sendText(chatId, "🚪 Комната *" + roomCode + "*\nФункционал управления задачами пока в разработке.");
+      } else {
+        // Старые callback'и: profile, help
+        switch (callbackData) {
+          case "profile":
+            if (dbManager.isUserRegistered(userId)) {
+              String profileText = "👤 *Твой профиль:*\n" +
+                                   "ID: `" + userId + "`\n" +
+                                   "Username: @" + userName + "\n\n" +
+                                   "*Твои комнаты:*";
+
+              List<String> userRooms = dbManager.getUserRooms(userId);
+
+              InlineKeyboardMarkup markup = new InlineKeyboardMarkup();
+              List<List<InlineKeyboardButton>> rows = new ArrayList<>();
+
+              if (userRooms.isEmpty()) {
+                profileText += "\nУ тебя пока нет комнат. Создай первую командой /createroom";
+              } else {
+                for (String roomCode : userRooms) {
+                  InlineKeyboardButton roomButton = new InlineKeyboardButton();
+                  roomButton.setText("🚪 " + roomCode);
+                  roomButton.setCallbackData("room_" + roomCode);
+                  List<InlineKeyboardButton> row = new ArrayList<>();
+                  row.add(roomButton);
+                  rows.add(row);
+                }
+              }
+
+              markup.setKeyboard(rows);
+
+              SendMessage message = new SendMessage();
+              message.setChatId(String.valueOf(chatId));
+              message.setText(profileText);
+              message.setParseMode("Markdown");
+              message.setReplyMarkup(markup);
+              try {
+                execute(message);
+              } catch (TelegramApiException e) {
+                e.printStackTrace();
+              }
+            } else {
+              sendText(chatId, "Ты ещё не зарегистрирован. Напиши любое сообщение для регистрации.");
+            }
+            break;
+          case "help":
+            sendText(chatId, "🤖 *Бот для уборки*\n/start — меню\n/createroom *код* - создать новую комнату\n/entertheroom *код* - присоединиться к комнате");
+            break;
+        }
       }
     }
   }
-  // Вспомогательный метод для отправки текстового сообщения
+
   private void sendText(Long chatId, String text) {
     SendMessage message = new SendMessage();
     message.setChatId(chatId.toString());
     message.setText(text);
+    message.setParseMode("Markdown");
     try {
-      execute(message); // отправляем через API бота
+      execute(message);
     } catch (TelegramApiException e) {
       e.printStackTrace();
     }
@@ -142,17 +183,14 @@ public class SimpleRegisterBot extends TelegramLongPollingBot {
     InlineKeyboardMarkup markup = new InlineKeyboardMarkup();
     List<List<InlineKeyboardButton>> rows = new ArrayList<>();
 
-    // Первая кнопка
     InlineKeyboardButton profileButton = new InlineKeyboardButton();
     profileButton.setText("👤 Мой профиль");
     profileButton.setCallbackData("profile");
 
-    // Вторая кнопка
     InlineKeyboardButton helpButton = new InlineKeyboardButton();
     helpButton.setText("❓ Помощь");
     helpButton.setCallbackData("help");
 
-    // Добавляем кнопки в ряд (по одной в ряду)
     List<InlineKeyboardButton> row1 = new ArrayList<>();
     row1.add(profileButton);
     rows.add(row1);

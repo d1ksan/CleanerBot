@@ -1,13 +1,13 @@
 package com.example;
 
 import java.sql.*;
+import java.util.ArrayList;
+import java.util.List;
 
 public class DatabaseManager {
-  // Путь к файлу базы данных (будет создан в корне проекта)
   private static final String DB_URL = "jdbc:sqlite:bot_users.db";
 
   public DatabaseManager() {
-    // При создании объекта проверяем/создаём таблицу
     createTableIfNotExists();
   }
 
@@ -47,14 +47,13 @@ public class DatabaseManager {
     }
   }
 
-  // Проверка, есть ли пользователь в базе
   public boolean isUserRegistered(long userId) {
     String sql = "SELECT 1 FROM users WHERE user_id = ?";
     try (Connection conn = DriverManager.getConnection(DB_URL);
         PreparedStatement pstmt = conn.prepareStatement(sql)) {
       pstmt.setLong(1, userId);
       ResultSet rs = pstmt.executeQuery();
-      return rs.next(); // если есть хоть одна запись, вернёт true
+      return rs.next(); 
     } catch (SQLException e) {
       System.err.println("Ошибка проверки пользователя: " + e.getMessage());
       return false;
@@ -96,7 +95,6 @@ public class DatabaseManager {
             }
         }
 
-        // Вставляем комнату
         try (PreparedStatement insertStmt = conn.prepareStatement(insertSql)) {
             insertStmt.setString(1, trimmedCode);
             insertStmt.setLong(2, creatorUserId);
@@ -106,7 +104,6 @@ public class DatabaseManager {
             }
         }
 
-        // Получаем ID последней вставленной комнаты
         int roomId;
         try (Statement stmt = conn.createStatement();
              ResultSet rs = stmt.executeQuery(getLastIdSql)) {
@@ -118,7 +115,6 @@ public class DatabaseManager {
             }
         }
 
-        // Добавляем создателя как участника
         try (PreparedStatement addStmt = conn.prepareStatement(addMemberSql)) {
             addStmt.setInt(1, roomId);
             addStmt.setLong(2, creatorUserId);
@@ -133,8 +129,6 @@ public class DatabaseManager {
         return false;
     }
 }
-
-
 
   public boolean roomExists(String roomCode) {
     String trimmedCode = roomCode.trim();
@@ -155,28 +149,25 @@ public class DatabaseManager {
     String checkMemberSql = "SELECT 1 FROM room_members WHERE room_id = ? AND user_id = ?";
     String insertMemberSql = "INSERT INTO room_members (room_id, user_id) VALUES (?, ?)";
     try (Connection conn = DriverManager.getConnection(DB_URL)) {
-      // Получаем ID комнаты
       int roomId;
       try (PreparedStatement getStmt = conn.prepareStatement(getRoomIdSql)) {
         getStmt.setString(1, roomCode);
         ResultSet rs = getStmt.executeQuery();
         if (!rs.next()) {
-          return false; // комната не найдена
+          return false; 
         }
         roomId = rs.getInt("id");
       }
 
-      // Проверяем, не участник ли уже
       try (PreparedStatement checkStmt = conn.prepareStatement(checkMemberSql)) {
         checkStmt.setInt(1, roomId);
         checkStmt.setLong(2, userId);
         ResultSet rs = checkStmt.executeQuery();
         if (rs.next()) {
-          return true; // уже участник (считаем успехом)
+          return true; 
         }
       }
 
-      // Добавляем участника
       try (PreparedStatement insertStmt = conn.prepareStatement(insertMemberSql)) {
         insertStmt.setInt(1, roomId);
         insertStmt.setLong(2, userId);
@@ -188,4 +179,22 @@ public class DatabaseManager {
       return false;
     }
   }
+  public List<String> getUserRooms(long userId) {
+    List<String> rooms = new ArrayList<>();
+    String sql = "SELECT r.room_code FROM rooms r " +
+                 "JOIN room_members rm ON r.id = rm.room_id " +
+                 "WHERE rm.user_id = ?";
+    try (Connection conn = DriverManager.getConnection(DB_URL);
+         PreparedStatement stmt = conn.prepareStatement(sql)) {
+        stmt.setLong(1, userId);
+        ResultSet rs = stmt.executeQuery();
+        while (rs.next()) {
+            rooms.add(rs.getString("room_code"));
+        }
+    } catch (SQLException e) {
+        e.printStackTrace();
+    }
+    return rooms;
+}
+
 }
